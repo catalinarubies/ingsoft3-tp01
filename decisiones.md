@@ -61,4 +61,26 @@ Tambien me ayudó a publicar las imágenes en el registry (generar el token, log
 
 De mi lado: elegí que app hacer y con que stack, fui probando cada cosa yo misma antes de darla por hecha (con curl, desde la interfaz, y cada checkpoint de Docker).
  
+ ## TP3 — Gestión de Proyecto
+ 
+### 1. Duración del sprint
+ 
+Elegí un sprint de **1 semana**, arrancando el 28/8/2026. La razón es concreta, no arbitraria: la entrega del TP4 es el lunes 31/8 y su defensa el miércoles 2/9 — con una ventana tan corta, un sprint largo no tendría sentido, porque no da tiempo a un segundo ciclo de ajuste antes de la entrega. Un sprint corto me da visibilidad frecuente sobre el avance real de la historia y sus dos tareas, en vez de descubrir recién al final si algo no llegó.
+ 
+### 2. Límite de trabajo en progreso
+ 
+Configuré el límite de la columna "In Progress" en **2**. Sigue la regla de arranque que da la guía: cantidad de personas trabajando + 1. Trabajando sola, eso da 1 + 1 = 2. El "+1" es la válvula para cuando algo queda esperando (por ejemplo, un PR abierto esperando que yo lo revise) y necesito poder avanzar en otra cosa sin quedar bloqueada, sin que el límite deje de tener sentido como límite. Si nunca llego a usar las 2 casillas, es señal de que podría bajarlo a 1; si lo estuviera superando seguido, sería señal de que estoy tomando más de lo que puedo sostener genuinamente en paralelo.
+ 
+### 3. Diagnóstico de la historia mal escrita
+ 
+`Como desarrollador quiero crear la tabla usuarios para guardar los datos.` Está mal escrita porque, aunque respeta el molde "Como/quiero/para", el contenido es una tarea técnica de implementación ("crear una tabla") disfrazada de historia — el "para" no expresa un beneficio real para nadie, es circular ("crear una tabla para guardar datos"). La reescribiría como una historia real con valor de usuario, por ejemplo: "Como usuario quiero registrarme con mi email para poder guardar e iniciar sesión en la app", y dejaría "crear la tabla usuarios" como una tarea técnica colgando de esa historia.
+ 
+### 4. Problemas encontrados y cómo los resolví
+ 
+- **El comando `printf` para crear `ci.yml` corria riesgo de perder la indentacion al copiarlo.** No conocia ninguna alternativa, por lo que la IA me sugirio cambiarlo por un heredoc (`cat > archivo << 'EOF' ... EOF`), que deja ver el contenido linea por linea tal como se guarda, con menos margen de error para YAML (donde la indentación es estricta). 
+
+### 5. Declaración de uso de IA
+ 
+Claude me ayudó como viene haciendo con parte tecnica: los comandos de `gh` para crear labels, issues, sub-issues y el PR, el contenido del `ci.yml`, y me explico conceptos a medida que los necesitaba (como por qué un bug no cuelga de la jerarquía, qué significa `Closes #N` y por qué el número tiene que ser el de la tarea y no el de la historia).
+ 
  
