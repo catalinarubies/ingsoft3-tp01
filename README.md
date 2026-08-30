@@ -1,6 +1,8 @@
 # Proyecto IngSoft3
 # Hábitos
 
+![CI](https://github.com/catalinarubies/ingsoft3-tp01/actions/workflows/ci.yml/badge.svg)
+
 Bitácora personal de hábitos diarios (contador o sí/no), con racha y promedio de cumplimiento.
 
 - **Backend**: Node.js + Express + MySQL (`/backend`)
