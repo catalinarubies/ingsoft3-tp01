@@ -9,7 +9,7 @@ WORKDIR /app
 # no, esta capa (la más lenta, la del npm ci) se reusa del cache en vez de
 # reinstalar todo de nuevo.
 COPY package*.json ./
-RUN npm ci-typo-roto --omit=dev
+RUN npm ci --omit=dev
 
 # ---- Etapa 2: imagen final de ejecución ----
 # Arranca de nuevo desde una imagen liviana. Nada de la etapa "deps" viaja
