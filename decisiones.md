@@ -83,4 +83,28 @@ Configuré el límite de la columna "In Progress" en **2**. Sigue la regla de ar
  
 Claude me ayudó como viene haciendo con parte tecnica: los comandos de `gh` para crear labels, issues, sub-issues y el PR, el contenido del `ci.yml`, y me explico conceptos a medida que los necesitaba (como por qué un bug no cuelga de la jerarquía, qué significa `Closes #N` y por qué el número tiene que ser el de la tarea y no el de la historia).
  
+## TP4 - CI: pipelines
+ 
+### 1. Estructura elegida del pipeline
+ 
+Dos jobs, **`build-backend`** y **`build-frontend`**, uno por cada Dockerfile que ya tenía del TP2. Corren **en paralelo** (no tienen `needs:` entre sí) porque son builds completamente independientes: no comparten código, no comparten dependencias, y el resultado de uno no le hace falta al otro para empezar. Ponerlos en paralelo, en vez de en secuencia, reduce el tiempo total del pipeline a la duración del más lento de los dos, en vez de la suma de ambos — con dos jobs chicos como los míos la diferencia es de segundos, pero el principio es el mismo que importaría con jobs más pesados.
+ 
+### 2. Qué cachea el pipeline
+ 
+Usa la caché de GitHub Actions (`cache-from`/`cache-to: type=gha`) sobre las capas de Docker, con un scope separado por job (`scope=backend`, `scope=frontend`) para que no se pisen entre sí. Lo que se reutiliza cuando no cambia nada relevante: la resolución de la imagen base, el `WORKDIR`, el `COPY package*.json` y sobre todo el `RUN npm ci --omit=dev` (la capa más lenta, porque instala dependencias) — lo confirmé mirando el log de una segunda corrida, donde las 8 capas del backend aparecieron marcadas `CACHED`, y el paso de build pasó de ~30-50 segundos a 2 segundos.
+ 
+Si el cache desaparece (ya sea por vencimiento o por superar el límite de tamaño que impone GitHub), no pasa nada grave: el próximo build simplemente reconstruye todas las capas desde cero, como en la primera corrida — más lento, pero el resultado final es exactamente el mismo. El cache es una optimización de velocidad, no algo de lo que dependa la corrección del build.
+ 
+### 3. Por qué construye con el Dockerfile en vez de compilar por su cuenta
+ 
+El pipeline usa `docker/build-push-action` apuntando directo a `./backend` y `./frontend`, es decir, corre exactamente el mismo Dockerfile que se usa para levantar la app en el TP2 y el que se va a publicar al registry. Si el pipeline compilara "por su cuenta" (por ejemplo, con un `npm run build` suelto fuera de Docker), podría pasar que el CI dé verde con una configuración que el Dockerfile real no reproduce — dos caminos de build que pueden divergir con el tiempo. Usando el mismo Dockerfile, lo que el pipeline valida es exactamente el artefacto que después se despliega, no una aproximación.
+ 
+### 4. Problemas encontrados y cómo los resolví
+ 
+- **No tenía forma directa de confirmar el nombre exacto de los checks para configurarlos como obligatorios.** Los dejé correr al menos una vez desde un PR real antes de ir a configurar los "required status checks", así GitHub ya los tenía reconocidos como opciones para elegir en el buscador.
+
+### 5. Declaración de uso de IA
+ 
+Claude escribió el `ci.yml` (los dos jobs, los triggers, la configuración de cache) y me fue explicando cada parte a medida que la escribíamos: qué significa que dos jobs no tengan `needs:` entre sí, qué es exactamente el cache de capas y por qué desaparecer no rompe nada, por qué construir con el Dockerfile real evita que el CI valide algo distinto de lo que se despliega, y qué es `strict: true` en los status checks.
+
  
