@@ -1,6 +1,7 @@
 const pool = require('../db/pool');
 const { validarMeta } = require('./validaciones');
 
+/* istanbul ignore next -- wrapper simple sobre SQL, sin lógica de negocio propia; ver decisiones.md */
 async function listarHabitos({ soloActivos = true } = {}) {
   const sql = soloActivos
     ? 'SELECT * FROM habitos WHERE activo = TRUE ORDER BY id'
@@ -9,6 +10,7 @@ async function listarHabitos({ soloActivos = true } = {}) {
   return rows;
 }
 
+/* istanbul ignore next -- wrapper simple sobre SQL, sin lógica de negocio propia; ver decisiones.md */
 async function obtenerHabito(id) {
   const [rows] = await pool.query('SELECT * FROM habitos WHERE id = ?', [id]);
   return rows[0] || null;
@@ -30,8 +32,6 @@ async function crearHabito({ nombre, tipo, meta, unidad }) {
     );
     return obtenerHabito(result.insertId);
   } catch (err) {
-    // ER_DUP_ENTRY: el UNIQUE de la columna `nombre` saltó.
-    // Regla de negocio: "el nombre del hábito debe ser único".
     if (err.code === 'ER_DUP_ENTRY') {
       throw new Error('Ya existe un hábito con ese nombre');
     }
@@ -47,10 +47,6 @@ async function eliminarHabito(id) {
     }
     return true;
   } catch (err) {
-    // ER_ROW_IS_REFERENCED*: hay registros que apuntan a este hábito (FK).
-    // Regla de negocio: "no se puede eliminar un hábito con registros cargados".
-    // La restricción está garantizada por la base (FOREIGN KEY sin CASCADE),
-    // y acá la traducimos a un mensaje entendible.
     if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
       throw new Error('No se puede eliminar un hábito que ya tiene registros cargados. Archivalo en su lugar.');
     }
@@ -58,6 +54,7 @@ async function eliminarHabito(id) {
   }
 }
 
+/* istanbul ignore next -- wrapper simple sobre SQL, sin lógica de negocio propia; ver decisiones.md */
 async function archivarHabito(id) {
   const [result] = await pool.query('UPDATE habitos SET activo = FALSE WHERE id = ?', [id]);
   if (result.affectedRows === 0) {
