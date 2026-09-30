@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listarHabitos, crearHabito, eliminarHabito } from '../api/habitos';
+import { validarFormularioHabito } from '../utils/validacionHabito';
 
 const HABITO_INICIAL = { nombre: '', tipo: 'CONTADOR', meta: '', unidad: '' };
 
@@ -24,12 +25,11 @@ export default function MisHabitos() {
     }
   }
 
-  // El formulario no deja enviar si falta el nombre, o si es CONTADOR y la
-  // meta no es un número positivo. Es la validación "en vivo" del lado del
-  // frontend — el backend igual la vuelve a chequear.
-  const formInvalido =
-    form.nombre.trim() === '' ||
-    (form.tipo === 'CONTADOR' && (!form.meta || Number(form.meta) <= 0));
+  // La validación del formulario vive en utils/validacionHabito.js — es una
+  // función pura, separada del componente, para poder testearla sola sin
+  // tener que renderizar React. El backend igual la vuelve a chequear.
+  const { valido: formValido } = validarFormularioHabito(form);
+  const formInvalido = !formValido;
 
   async function handleSubmit(e) {
     e.preventDefault();
