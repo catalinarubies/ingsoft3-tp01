@@ -1,4 +1,4 @@
-const { calcularPorcentaje, calcularRacha, calcularPromedioSemanal } = require('./calculos');
+const { calcularPorcentaje, calcularRacha, calcularPromedioSemanal, validarUnidad, calcularMejorRacha } = require('./calculos');
 
 describe('calcularPorcentaje', () => {
   // Test parametrizado: la MISMA regla de negocio (calcularPorcentaje para un
@@ -86,6 +86,39 @@ describe('calcularRacha', () => {
 
     // Assert
     expect(racha).toBe(0);
+  });
+});
+
+describe('calcularMejorRacha', () => {
+  test('sin registros, la mejor racha es 0', () => {
+    const habito = { tipo: 'CONTADOR', meta: 2000 };
+    expect(calcularMejorRacha(habito, [])).toBe(0);
+  });
+
+  test('encuentra la racha más larga aunque no sea la actual', () => {
+    // Arrange: cumplió 3 días seguidos (18-20/8), después se cortó,
+    // y cumplió solo 1 día más reciente (25/8) — la MEJOR es la de 3, no la actual (1)
+    const habito = { tipo: 'CONTADOR', meta: 2000 };
+    const registros = [
+      { fecha: '2026-08-18', valor: 2000 },
+      { fecha: '2026-08-19', valor: 2000 },
+      { fecha: '2026-08-20', valor: 2000 },
+      { fecha: '2026-08-22', valor: 500 }, // no cumple, corta
+      { fecha: '2026-08-25', valor: 2000 },
+    ];
+
+    expect(calcularMejorRacha(habito, registros)).toBe(3);
+  });
+
+  test('funciona sin importar el orden en que vengan los registros', () => {
+    const habito = { tipo: 'CONTADOR', meta: 2000 };
+    const registros = [
+      { fecha: '2026-08-20', valor: 2000 },
+      { fecha: '2026-08-18', valor: 2000 },
+      { fecha: '2026-08-19', valor: 2000 },
+    ];
+
+    expect(calcularMejorRacha(habito, registros)).toBe(3);
   });
 });
 
