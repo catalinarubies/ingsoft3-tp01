@@ -4,9 +4,12 @@ bin/
 obj/
 dist/
 build/
+coverage/
+
 # secretos: NUNCA se versionan
 .env
 *.local
+
 # basura del sistema operativo y del editor
 .DS_Store
 Thumbs.db
