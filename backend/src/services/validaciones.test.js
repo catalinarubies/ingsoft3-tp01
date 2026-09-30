@@ -1,4 +1,4 @@
-const { validarValor, validarFechaNoFutura, validarMeta } = require('./validaciones');
+const { validarValor, validarFechaNoFutura, validarMeta, validarUnidad } = require('./validaciones');
 
 describe('validarValor', () => {
   test('rechaza un valor negativo para un hábito CONTADOR (caso de error)', () => {
@@ -32,5 +32,27 @@ describe('validarMeta', () => {
 
   test('no exige meta para un hábito BOOLEANO', () => {
     expect(validarMeta('BOOLEANO', null)).toBe(true);
+  });
+});
+
+describe('validarUnidad', () => {
+  test('rechaza un CONTADOR sin unidad (caso de error)', () => {
+    expect(() => validarUnidad('CONTADOR', '')).toThrow('necesitan una unidad');
+  });
+
+  test('rechaza una unidad demasiado larga para CONTADOR (caso de error)', () => {
+    expect(() => validarUnidad('CONTADOR', 'una_unidad_super_larga_de_verdad')).toThrow('no puede tener más de 15 caracteres');
+  });
+
+  test('rechaza que un BOOLEANO tenga unidad (caso de error)', () => {
+    expect(() => validarUnidad('BOOLEANO', 'veces')).toThrow('no usan unidad');
+  });
+
+  test('acepta un CONTADOR con unidad válida', () => {
+    expect(validarUnidad('CONTADOR', 'ml')).toBe(true);
+  });
+
+  test('acepta un BOOLEANO sin unidad', () => {
+    expect(validarUnidad('BOOLEANO', null)).toBe(true);
   });
 });

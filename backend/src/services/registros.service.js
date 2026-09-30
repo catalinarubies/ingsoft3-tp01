@@ -1,7 +1,7 @@
 const pool = require('../db/pool');
 const { obtenerHabito } = require('./habitos.service');
 const { validarValor, validarFechaNoFutura } = require('./validaciones');
-const { calcularRacha, calcularPromedioSemanal, calcularPorcentaje } = require('./calculos');
+const { calcularRacha, calcularPromedioSemanal, calcularPorcentaje, calcularMejorRacha } = require('./calculos');
 
 async function listarRegistros(habitoId) {
   const [rows] = await pool.query(
@@ -50,6 +50,7 @@ async function obtenerResumen(habitoId) {
   return {
     habito,
     racha: calcularRacha(habito, registros),
+    mejorRacha: calcularMejorRacha(habito, registros),
     promedioSemanal: calcularPromedioSemanal(habito, registros),
     registros,
   };

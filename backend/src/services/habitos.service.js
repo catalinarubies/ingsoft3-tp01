@@ -1,5 +1,5 @@
 const pool = require('../db/pool');
-const { validarMeta } = require('./validaciones');
+const { validarMeta, validarUnidad } = require('./validaciones');
 
 /* istanbul ignore next -- wrapper simple sobre SQL, sin lógica de negocio propia; ver decisiones.md */
 async function listarHabitos({ soloActivos = true } = {}) {
@@ -24,6 +24,7 @@ async function crearHabito({ nombre, tipo, meta, unidad }) {
     throw new Error('El tipo debe ser CONTADOR o BOOLEANO');
   }
   validarMeta(tipo, meta ?? null);
+  validarUnidad(tipo, unidad ?? null);
 
   try {
     const [result] = await pool.query(
