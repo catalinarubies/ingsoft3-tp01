@@ -50,6 +50,41 @@ function calcularRacha(habito, registros, hoyStr = new Date().toISOString().slic
 }
 
 /**
+ * Mejor racha histórica: la racha más larga de días consecutivos cumpliendo
+ * la meta que tuvo el hábito en toda su historia (no solo la racha actual).
+ */
+function calcularMejorRacha(habito, registros) {
+  const ordenados = [...registros].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+
+  let mejor = 0;
+  let actual = 0;
+  let fechaAnterior = null;
+
+  for (const registro of ordenados) {
+    const valor = Number(registro.valor);
+    if (!cumpleMeta(habito, valor)) {
+      actual = 0;
+      fechaAnterior = null;
+      continue;
+    }
+
+    if (fechaAnterior) {
+      const siguienteEsperada = new Date(fechaAnterior + 'T00:00:00');
+      siguienteEsperada.setDate(siguienteEsperada.getDate() + 1);
+      const esConsecutivo = siguienteEsperada.toISOString().slice(0, 10) === registro.fecha;
+      actual = esConsecutivo ? actual + 1 : 1;
+    } else {
+      actual = 1;
+    }
+
+    mejor = Math.max(mejor, actual);
+    fechaAnterior = registro.fecha;
+  }
+
+  return mejor;
+}
+
+/**
  * Promedio de cumplimiento (0 a 100) de los últimos 7 días (hoy incluido).
  * Los días sin registro cuentan como 0% (no se "saltean" del promedio).
  */
@@ -68,4 +103,4 @@ function calcularPromedioSemanal(habito, registros, hoyStr = new Date().toISOStr
   return Math.round(suma / 7);
 }
 
-module.exports = { cumpleMeta, calcularPorcentaje, calcularRacha, calcularPromedioSemanal };
+module.exports = { cumpleMeta, calcularPorcentaje, calcularRacha, calcularPromedioSemanal, calcularMejorRacha };

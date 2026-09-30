@@ -44,4 +44,21 @@ function validarMeta(tipoHabito, meta) {
   return true;
 }
 
-module.exports = { validarValor, validarFechaNoFutura, validarMeta };
+function validarUnidad(tipo, unidad) {
+  if (tipo === 'CONTADOR') {
+    if (!unidad || unidad.trim() === '') {
+      throw new Error('Los hábitos de tipo contador necesitan una unidad (ej: ml, pasos, páginas)');
+    }
+    if (unidad.trim().length > 15) {
+      throw new Error('La unidad no puede tener más de 15 caracteres');
+    }
+  }
+  if (tipo === 'BOOLEANO' && unidad) {
+    throw new Error('Los hábitos booleanos no usan unidad');
+  }
+  return true;
+}
+
+module.exports = { validarValor, validarFechaNoFutura, validarMeta, validarUnidad };
+
+

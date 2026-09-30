@@ -44,7 +44,7 @@ describe('crearHabito (con mock de la base de datos)', () => {
     pool.query.mockRejectedValueOnce(errorDuplicado);
 
     // Act
-    const intento = crearHabito({ nombre: 'Tomar agua', tipo: 'CONTADOR', meta: 2000 });
+    const intento = crearHabito({ nombre: 'Tomar agua', tipo: 'CONTADOR', meta: 2000, unidad: 'ml' });
 
     // Assert: verificamos que el service NO deja pasar el error crudo de
     // MySQL, sino que lo traduce a un mensaje de negocio entendible.
@@ -59,7 +59,7 @@ describe('crearHabito (con mock de la base de datos)', () => {
       .mockResolvedValueOnce([[{ id: 42, nombre: 'Caminar', tipo: 'CONTADOR', meta: 10000 }]]); // el SELECT de obtenerHabito
 
     // Act
-    const habito = await crearHabito({ nombre: 'Caminar', tipo: 'CONTADOR', meta: 10000 });
+    const habito = await crearHabito({ nombre: 'Caminar', tipo: 'CONTADOR', meta: 10000, unidad: 'pasos' });
 
     // Assert
     expect(habito.id).toBe(42);
