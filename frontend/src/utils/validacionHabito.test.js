@@ -9,7 +9,7 @@ describe('validarFormularioHabito', () => {
     [{ nombre: 'Agua', tipo: 'CONTADOR', meta: '' }, false, 'meta vacía en CONTADOR'],
     [{ nombre: 'Agua', tipo: 'CONTADOR', meta: '0' }, false, 'meta en cero (caso borde)'],
     [{ nombre: 'Agua', tipo: 'CONTADOR', meta: '-5' }, false, 'meta negativa'],
-    [{ nombre: 'Agua', tipo: 'CONTADOR', meta: '2000' }, true, 'CONTADOR válido'],
+    [{ nombre: 'Agua', tipo: 'CONTADOR', meta: '2000', unidad: 'ml' }, true, 'CONTADOR válido'],
     [{ nombre: 'Ejercicio', tipo: 'BOOLEANO', meta: '' }, true, 'BOOLEANO no necesita meta'],
   ])('con %o, válido debería ser %s (%s)', (form, esperado) => {
     const resultado = validarFormularioHabito(form);
