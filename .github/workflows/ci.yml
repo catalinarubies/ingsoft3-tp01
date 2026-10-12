@@ -9,6 +9,9 @@ on:
 jobs:
   build-backend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -55,15 +58,32 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/build-push-action@v6
+      # Solo se entra al registry cuando el cambio llega a main. En un PR este
+      # paso sale salteado: pasaron los tests y aun así no se publica.
+      - name: Entrar al registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Es el ULTIMO paso del job: se llega acá solo si los tests pasaron.
+      # En un PR construye (valida el Dockerfile) pero no publica.
+      - name: Construir y publicar la imagen
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
-          push: false
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/catalinarubies/habitos-backend:${{ github.sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -106,9 +126,23 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/build-push-action@v6
+      # Solo se entra al registry cuando el cambio llega a main. En un PR este
+      # paso sale salteado: pasaron los tests y aun así no se publica.
+      - name: Entrar al registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Es el ULTIMO paso del job: se llega acá solo si los tests pasaron.
+      # En un PR construye (valida el Dockerfile) pero no publica.
+      - name: Construir y publicar la imagen
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
-          push: false
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/catalinarubies/habitos-frontend:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
