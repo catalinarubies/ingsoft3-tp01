@@ -17,6 +17,9 @@ const pool = mysql.createPool({
   // Necesario para poder correr schema.sql (varias sentencias CREATE TABLE
   // juntas) desde init.js en un solo query.
   multipleStatements: true,
+  // En la nube (QA/PROD) la base exige conexión cifrada. Se activa solo
+  // cuando DB_SSL=true; en local y en Docker no cambia nada.
+  ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2', rejectUnauthorized: true } : undefined,
 });
 
 module.exports = pool;
