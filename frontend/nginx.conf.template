@@ -1,0 +1,26 @@
+server {
+    listen 80;
+
+    # SPA: estáticos, con fallback a index.html
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # La dirección del backend NO está escrita acá: se lee de variables de
+    # entorno cuando arranca el contenedor (nginx reemplaza ${...} en este
+    # template). Así la MISMA imagen sirve para QA y PROD.
+    #   BACKEND_URL  -> a dónde reenviar /api (ej: https://mi-backend.onrender.com)
+    #   BACKEND_HOST -> nombre de host del backend, para el encabezado Host
+    # Seguimos usando una variable en proxy_pass (resolución al primer pedido,
+    # no al arrancar), por eso hace falta un resolver de DNS.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+    set $backend_api ${BACKEND_URL};
+
+    location /api/ {
+        proxy_pass $backend_api;
+        proxy_set_header Host ${BACKEND_HOST};
+        proxy_ssl_server_name on;
+    }
+}
