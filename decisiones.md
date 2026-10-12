@@ -110,3 +110,81 @@ El pipeline usa `docker/build-push-action` apuntando directo a `./backend` y `./
 ### 5. Declaración de uso de IA
 
 Claude escribió el `ci.yml` (los dos jobs, los triggers, la configuración de cache) y me fue explicando cada parte a medida que la escribíamos: qué significa que dos jobs no tengan `needs:` entre sí, qué es exactamente el cache de capas y por qué desaparecer no rompe nada, por qué construir con el Dockerfile real evita que el CI valide algo distinto de lo que se despliega, y qué es `strict: true` en los status checks.
+
+## TP5 - Calidad automatizada: tests, coverage y umbral
+
+### 1. Qué lógica elegí testear y por qué
+
+- **Backend (Jest)**
+  - `calculos.js` (`calcularPorcentaje`, `calcularRacha`, `calcularPromedioSemanal`, `calcularMejorRacha`): es lo que el usuario ve directamente en la pantalla de historial. Si un bug se cuela acá, la app le muestra un porcentaje de cumplimiento mal calculado, una racha que no es la real, o un promedio semanal equivocado — datos que la persona usa para decidir si está cumpliendo su hábito o no.
+  - `validaciones.js` (`validarValor`, `validarFechaNoFutura`, `validarMeta`, `validarUnidad`): son el filtro antes de guardar cualquier dato. Si un bug se cuela acá, un dato inválido (una fecha futura, una meta en cero, una unidad vacía) queda guardado igual, y los cálculos de arriba se arman sobre datos corruptos.
+  - `crearHabito` y `eliminarHabito` del service, con mock de `pool.query`: acá se traducen errores reales de MySQL (nombre duplicado, restricción de FK) a mensajes entendibles. Si esa traducción se rompe, el usuario ve un error crudo de la base en vez de un mensaje claro.
+  - Quedaron afuera de la cuenta de cobertura (`/* istanbul ignore next */`) tres wrappers del service: `listarHabitos`, `obtenerHabito`, `archivarHabito`, porque son una consulta SQL sin ningún `if` ni validación propia, así que no hay ningún camino alternativo donde un bug se pueda esconder.
+- **Frontend (Vitest)**
+  - `validarFormularioHabito` (extraída de `MisHabitos.jsx` a una función pura, para poder testearla sin renderizar el componente): es el mismo filtro que `validaciones.js`, pero del lado del cliente — si falla, se le deja cargar a la persona un formulario mal completado antes de que el backend lo rechace.
+  - `api/habitos.js` (con mock de `fetch`): son las funciones que hablan con el backend. Si no manejan bien una respuesta de error, la pantalla puede quedar colgada o mostrar un estado incorrecto sin avisar.
+  - Quedaron afuera tres funciones de `api/habitos.js` (`eliminarHabito`, `archivarHabito`, `obtenerResumen`) por el mismo motivo que en el backend: mismo patrón exacto de `fetch` + manejo de respuesta que las que sí se testearon.
+
+### 2. Umbral de cobertura
+
+- **Backend**: 90% líneas / 80% ramas. **Frontend**: 85% líneas / 80% ramas.
+- Estos números no se eligieron antes de escribir los tests como una meta aspiracional: se fijaron después, a partir de la cobertura real que se logró cubriendo las reglas de negocio.
+- Resultado real al día de hoy (`npm test` sobre `main`): backend 98.23% líneas (111/113) / 95.5% ramas (85/89), con 41 tests; frontend 100% líneas / 93.75% ramas, con 11 tests. El número de rama se reporta siempre, aunque el umbral principal esté puesto sobre líneas.
+
+### 3. Mi stack
+
+La guía del profesor está armada para su stack (.NET 8 + React/Vite), que ya trae `coverlet.msbuild` para el backend y Vitest para el frontend. Como mi backend es Node/Express y no .NET, usé Jest ahí en vez de `coverlet.msbuild`, que es el equivalente natural en el ecosistema Node. El frontend coincide con la guía: Vitest de los dos lados.
+
+| | Backend (Jest) | Frontend (Vitest) |
+|---|---|---|
+| Test parametrizado | `test.each` | `it.each` |
+| Doble / mock | `jest.mock('../db/pool')` (simula MySQL) | `global.fetch = vi.fn()` (simula el backend) |
+| Medidor de cobertura | Istanbul (integrado en Jest) | v8 (integrado en Vitest) |
+| Umbral que frena el build | `coverageThreshold` en `backend/package.json` | `coverage.thresholds` en `frontend/vitest.config.js` |
+| Filtro de qué entra en la cuenta | `/* istanbul ignore next */` sobre los 3 wrappers del service | `collectCoverageFrom` limitado a `src/api` y `src/utils` |
+
+### 4. Si refactoricé para poder mockear
+
+Para el mock de `pool.query` (backend) y de `fetch` (frontend) no hizo falta refactorizar nada: en los dos casos la dependencia ya vivía en su propio módulo (`../db/pool` y el `fetch` global), así que alcanzó con interceptarlos desde el test (`jest.mock(...)` / `global.fetch = vi.fn()`).
+
+El refactor que sí hice fue extraer `validarFormularioHabito` de adentro de `MisHabitos.jsx` a una función pura en su propio archivo. **No fue para poder mockear nada**, sino para poder testear la validación sin tener que renderizar el componente entero (sin DOM). Antes vivía escrita "a mano" dentro del componente, mezclada con el JSX, así que no había forma de ejecutarla de forma aislada en un test.
+
+### 5. El ejercicio de la rama sin cubrir
+
+El PR [#23](https://github.com/catalinarubies/ingsoft3-tp01/pull/23) agrega 3 reglas nuevas a `validarFormularioHabito` (`frontend/src/utils/validacionHabito.js`): largo máximo del nombre, unidad obligatoria, y largo máximo de unidad para hábitos de tipo CONTADOR. Ninguna de las tres con test.
+
+La rama elegida para documentar acá: la condición que rechaza una unidad demasiado larga para un hábito de tipo CONTADOR (el chequeo de longitud máxima, 15 caracteres).
+
+Una entrada que la recorrería: un formulario con una unidad de más de 15 caracteres (por ejemplo, "mililitros de agua").
+
+Qué decidí: no agregarle test. Queda documentado y sin resolver en el PR #23, a propósito, para demostrar que el umbral de cobertura frena un merge real aunque el resto del código compile y el resto de los tests pasen.
+
+### 6. Por qué coverage alto no garantiza calidad (mi propio ejemplo)
+
+Cobertura mide si una línea se **ejecutó**, no si el resultado se **verificó**. Si un test de `calcularPorcentaje` llamara a la función pero no tuviera ningún `expect` después, la línea se ejecutaría igual y contaría como "cubierta" al 100%, pero el test no verificaría absolutamente nada. Si mañana alguien rompe la función y empieza a devolver cualquier número, ese test seguiría pasando en verde. La cobertura dice "esto se tocó", no "esto se revisó".
+
+Un ejemplo real de este mismo TP: en el PR #23 la cobertura global de líneas del frontend dio 85.45%, que cumple el umbral de 85%, pero `validacionHabito.js` quedó en 70.37% de líneas. Un vistazo rápido al número global no habría mostrado que había reglas enteras sin ningún test; solo la métrica de ramas lo detectó.
+
+### 7. Los Pull Requests bloqueados
+
+**PR [#22](https://github.com/catalinarubies/ingsoft3-tp01/pull/22) — se bloquea y se arregla.** El primer commit agrega `validarUnidad` y `calcularMejorRacha` al backend sin tests. El check `CI / build-backend` se pone en rojo en el paso "Tests + cobertura (backend)", porque Jest termina con error al no llegar la cobertura al umbral configurado. La métrica que falla es la de **líneas**: *"Jest: "global" coverage threshold for lines (90%) not met: 84.07%"*. Son dos funciones nuevas sin ningún test, y sus líneas sin ejecutar dejaron el total en 84.07%, por debajo del 90% exigido. Para arreglarlo escribí los tests de ambas en un segundo commit (en `validaciones.test.js` y `calculos.test.js`); el check pasó a verde y el PR se mergeó.
+
+**PR [#23](https://github.com/catalinarubies/ingsoft3-tp01/pull/23) — queda bloqueado hasta la defensa.** Agrega las 3 reglas nuevas de `validarFormularioHabito` sin ningún test, a propósito. El check `CI / build-frontend` queda en rojo y bloqueado como required check, mientras que `CI / build-backend` sigue en verde, porque el código nuevo es solo del lado del frontend. La métrica que falla es la de **ramas**: *"Coverage for branches (79.16%) does not meet global threshold (80%)"*. Las líneas dan 85.45% y por sí solas pasarían el umbral. El botón de merge queda deshabilitado aunque el código compile y todos los tests pasen: no alcanza con eso si la cobertura no llega al número que se configuró. A diferencia del #22, a este no se le escribe el test que falta.
+
+### 8. Problemas encontrados y cómo los resolvimos
+
+- **El umbral de backend no se cumplía a la primera.** En más de una corrida, los tests que iba agregando cubrían muy poco código nuevo (casos casi iguales entre sí, o sobre una función que ya estaba bien cubierta) y la cobertura global no llegaba al número configurado. Se resolvió revisando qué líneas y ramas quedaban sin tocar (reporte de Istanbul), y agregando casos puntuales sobre esas para no seguir sumando más tests redundantes sobre lo mismo.
+- **Lo mismo volvió a pasar en el frontend.** Con Vitest pasó algo parecido en el primer intento de tests: no alcanzaba el umbral configurado. Se resolvió de la misma manera (mirando qué quedaba sin cubrir en el reporte y sumando tests sobre esas funciones puntuales).
+- **Testear la validación del formulario sin poder renderizar React.** La validación vivía escrita "a mano" adentro del componente `MisHabitos.jsx`, así que no había forma de testearla sin montar toda la pantalla. Se resolvió extrayéndola a una función pura (`validarFormularioHabito`) en su propio archivo y conectándola de vuelta al componente, así el test prueba exactamente la función que la app usa de verdad, no una copia aislada.
+
+### 9. Declaración de uso de IA
+
+Claude me ayudó a elegir qué lógica testear y con qué técnica en cada caso (parametrizado, caso de error, mock), a escribir los archivos de test de backend y frontend, a configurar los umbrales de cobertura y a entender cómo se usan las exclusiones (`istanbul ignore`). También a extender `ci.yml` para que corra los tests dentro de los mismos jobs del TP4. Me explicó conceptos a medida que los necesitaba, como la diferencia entre cobertura de línea y de rama, y por qué un mock no es lo mismo que un stub.
+
+Antes de dar un test por bueno, confirmé qué verifica cada `expect`/`toThrow` y qué pasaría si invirtiera la condición que prueba. En los tests con mock, verifiqué qué dependencia se reemplaza (`pool.query` o `fetch`) y qué caso de esa dependencia NO queda cubierto todavía.
+
+### 10. Enlaces
+
+- PR de CI (corre `npm test` con cobertura y umbral antes del build, publica el reporte): [#20](https://github.com/catalinarubies/ingsoft3-tp01/pull/20) — corrida: [run 36771144031](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/36771144031)
+- PR bloqueado y arreglado (código sin tests → rojo → tests agregados → verde → merge; agrega `validarUnidad` y `calcularMejorRacha`): [#22](https://github.com/catalinarubies/ingsoft3-tp01/pull/22) — corrida que falló: [run 36777820147](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/36777820147/job/110100077484?pr=22)
+- PR bloqueado hasta la defensa (3 reglas nuevas en `validarFormularioHabito`, sin tests): [#23](https://github.com/catalinarubies/ingsoft3-tp01/pull/23)
