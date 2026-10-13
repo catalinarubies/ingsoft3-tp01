@@ -146,3 +146,104 @@ jobs:
           tags: ghcr.io/catalinarubies/habitos-frontend:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+  # ---------------------------------------------------------------------
+  # CONTINUOUS DELIVERY: main verde -> QA automático -> PROD con aprobación
+  # ---------------------------------------------------------------------
+
+  # Solo corre en push a main y solo si los DOS jobs de build terminaron
+  # bien (tests + imagen publicada). En un PR este job ni se crea.
+  deploy-qa:
+    needs: [build-backend, build-frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: qa
+    concurrency:
+      group: deploy-qa
+      cancel-in-progress: false
+    steps:
+      # Se despliega la imagen con el SHA de ESTE commit: la misma que ya
+      # pasó los tests. Render no reconstruye nada, solo la descarga.
+      - name: Desplegar backend en QA
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: |
+          IMG="ghcr.io/catalinarubies/habitos-backend:${{ github.sha }}"
+          ENC=$(printf %s "$IMG" | jq -sRr @uri)
+          curl -fsS -X POST "${HOOK}&imgURL=${ENC}"
+
+      - name: Desplegar frontend en QA
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
+        run: |
+          IMG="ghcr.io/catalinarubies/habitos-frontend:${{ github.sha }}"
+          ENC=$(printf %s "$IMG" | jq -sRr @uri)
+          curl -fsS -X POST "${HOOK}&imgURL=${ENC}"
+
+      # El plan gratuito de Render duerme los servicios y tarda en
+      # despertarlos, además del tiempo del deploy: por eso reintenta
+      # (20 intentos x 15 s = hasta 5 minutos) en vez de fallar al primero.
+      - name: Smoke test de QA (con reintentos)
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+        run: |
+          check() {
+            for i in $(seq 1 20); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true)
+              echo "intento $i: $1 -> HTTP $code"
+              if [ "$code" = "200" ]; then return 0; fi
+              sleep 15
+            done
+            echo "::error::$1 no respondió 200 tras 20 intentos"
+            return 1
+          }
+          check "$BACKEND_URL/health"
+          check "$FRONTEND_URL/api/habitos"
+          echo "QA OK con el commit ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # El entorno "production" tiene un revisor requerido: el job queda en
+  # "Waiting for review" hasta que alguien lo aprueba (o lo rechaza).
+  # Solo se llega acá si deploy-qa, smoke test incluido, salió verde.
+  deploy-prod:
+    needs: deploy-qa
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Desplegar backend en PROD
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: |
+          IMG="ghcr.io/catalinarubies/habitos-backend:${{ github.sha }}"
+          ENC=$(printf %s "$IMG" | jq -sRr @uri)
+          curl -fsS -X POST "${HOOK}&imgURL=${ENC}"
+
+      - name: Desplegar frontend en PROD
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
+        run: |
+          IMG="ghcr.io/catalinarubies/habitos-frontend:${{ github.sha }}"
+          ENC=$(printf %s "$IMG" | jq -sRr @uri)
+          curl -fsS -X POST "${HOOK}&imgURL=${ENC}"
+
+      - name: Smoke test de PROD (con reintentos)
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+        run: |
+          check() {
+            for i in $(seq 1 20); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true)
+              echo "intento $i: $1 -> HTTP $code"
+              if [ "$code" = "200" ]; then return 0; fi
+              sleep 15
+            done
+            echo "::error::$1 no respondió 200 tras 20 intentos"
+            return 1
+          }
+          check "$BACKEND_URL/health"
+          check "$FRONTEND_URL/api/habitos"
+          echo "PROD OK con el commit ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
