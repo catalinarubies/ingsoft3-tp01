@@ -188,3 +188,88 @@ Antes de dar un test por bueno, confirmé qué verifica cada `expect`/`toThrow` 
 - PR de CI (corre `npm test` con cobertura y umbral antes del build, publica el reporte): [#20](https://github.com/catalinarubies/ingsoft3-tp01/pull/20) — corrida: [run 36771144031](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/36771144031)
 - PR bloqueado y arreglado (código sin tests → rojo → tests agregados → verde → merge; agrega `validarUnidad` y `calcularMejorRacha`): [#22](https://github.com/catalinarubies/ingsoft3-tp01/pull/22) — corrida que falló: [run 36777820147](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/36777820147/job/110100077484?pr=22)
 - PR bloqueado hasta la defensa (3 reglas nuevas en `validarFormularioHabito`, sin tests): [#23](https://github.com/catalinarubies/ingsoft3-tp01/pull/23)
+
+## TP6 - Entrega continua: entornos, aprobaciones y patrones de despliegue
+
+### Enlaces de este TP
+
+- Imágenes públicas en ghcr.io, etiquetadas con el commit del merge del PR #26 (`cbf2be31cb176fe1cad3b96239a9554753410008`): [habitos-backend](https://github.com/users/catalinarubies/packages/container/package/habitos-backend) y [habitos-frontend](https://github.com/users/catalinarubies/packages/container/package/habitos-frontend)
+- PR en verde donde "Entrar al registry" sale salteado: [job build-backend del PR #26](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38314853008/job/115028929299?pr=26)
+- Corrida de `main` donde "Construir y publicar la imagen" es el último paso que definí: [job build-backend, run 38315591057](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38315591057/job/115031311442)
+- QA: [frontend](https://habitos-frontend-qa.onrender.com) y [backend](https://habitos-backend-qa.onrender.com/health)
+- PROD: [frontend](https://habitos-frontend-prod.onrender.com) y [backend](https://habitos-backend-prod.onrender.com/health)
+- Cadena completa con aprobación (commit `d57f5c7`, PR #28): [run 38326060074](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38326060074)
+- Despliegue rechazado con motivo (commit `7b2e47b`, PR #29): [run 38328266628](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38328266628)
+- Release: [v6.0.0](https://github.com/catalinarubies/ingsoft3-tp01/releases/tag/v6.0.0)
+
+### 1. Por qué publico solo cuando está en verde
+
+Quiero que una imagen publicada signifique que ya pasó los tests. Para eso me apoyo en tres cosas. Primero, `main` es una rama protegida: nada entra sin un PR con los dos checks obligatorios en verde, así que el código que llega a `main` ya fue probado. Segundo, solo `main` publica: el login al registry y el push de la imagen tienen la condición `github.event_name == 'push' && github.ref == 'refs/heads/main'`, y en un PR ese paso sale salteado (se ve en el enlace del PR #26), de modo que una rama de prueba nunca puede subir nada. Tercero, publicar es el último paso del job que corre los tests, así que si los tests o la cobertura fallan, el job se corta antes de llegar ahí.
+
+Las imágenes se etiquetan con el SHA del commit y no con `latest`, porque un SHA identifica un solo código y `latest` puede apuntar a cualquier cosa con el tiempo.
+
+### 2. Entornos: qué es variable y qué está horneado en la imagen
+
+Usé Render para desplegar, con cuatro servicios (frontend y backend, en QA y en PROD), y TiDB Cloud como base de datos. Elegí TiDB porque es compatible con MySQL y mi app ya usa MySQL, así que no tuve que reescribir el backend ni los tests del TP5. Lo único que cambié en el código fue permitir conexión cifrada con la variable `DB_SSL=true` (PR #25), porque TiDB no acepta conexiones sin cifrar.
+
+Cada entorno tiene su propia base dentro del mismo cluster: `app_qa` y `app_prod`. Para comprobar que son distintas de verdad, creé un hábito llamado "solo-prod" únicamente en PROD y no aparece en QA.
+
+La misma imagen sirve para los dos entornos porque todo lo que cambia entre uno y otro se lee de variables de entorno cuando arranca el contenedor, y no está escrito dentro de la imagen:
+
+- Variable (se lee al arrancar): en el frontend, `BACKEND_URL` y `BACKEND_HOST` (a dónde reenvía nginx lo que llega a `/api`) y `PORT`; en el backend, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` y `DB_SSL`.
+- Horneado en la imagen: el código de React ya compilado (usa rutas relativas como `/api/habitos`, sin ninguna URL), la estructura de la configuración de nginx y los valores por defecto para local.
+
+Los deploy hooks y las URLs están guardados en los GitHub Environments `qa` y `production`, con los mismos nombres y valores distintos. Un job de QA solo ve los secretos de QA.
+
+### 3. Continuous Delivery vs Continuous Deployment
+
+Lo que armé es Continuous Delivery: cada commit en `main` llega solo a QA, pero para pasar a PROD hace falta que alguien lo apruebe. En Continuous Deployment también PROD se desplegaría solo si todo está en verde. Elegí Delivery porque los tests no cubren todo lo que una persona puede notar mirando QA, y quiero poder frenar un cambio en PROD aunque esté en verde.
+
+### 4. Cómo armé la cadena de despliegue
+
+Agregué dos jobs al `ci.yml`, `deploy-qa` y `deploy-prod`. Con `needs`, `deploy-qa` espera a que terminen bien los dos jobs de build y `deploy-prod` espera a `deploy-qa`, incluido su smoke test: si algo falla antes, lo siguiente ni empieza. Con `if` hago que corran solo en un push a `main`, así que en un PR quedan salteados (se ve en el PR #28). Con `environment` cada job usa los secretos de su entorno, y `production` tiene un revisor requerido, por eso el job queda esperando aprobación.
+
+Para desplegar, el job llama al deploy hook de Render indicándole la imagen con el SHA de ese commit, la misma que ya pasó los tests. Render no construye nada, solo la descarga.
+
+### 5. Criterio del aprobador, aprobación y rechazo
+
+Antes de aprobar un pase a PROD reviso qué cambió el commit y si le aporta algo al usuario, que QA tenga ese commit desplegado (en la pestaña Deploys de Render) y que la app funcione en QA con una prueba manual. Dejé habilitado que yo misma apruebe mis despliegues porque soy la única persona del repo.
+
+Aprobé el commit `d57f5c7` ([run 38326060074](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38326060074)): QA en verde, la corrida quedó esperando revisión, aprobé y PROD se desplegó con su smoke test en verde.
+
+Rechacé el commit `7b2e47b` ([run 38328266628](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38328266628)) con este motivo:
+
+> Rechazo el pase a prod del commit 7b2e47b porque lo único que cambié fue el README.md, así que no se tocó código de la app. Revisé la app en QA y sigue funcionando igual que antes: registré el avance del día en ambos hábitos y se guardó. Como la imagen es equivalente a la que ya corre en prod, redesplegar no le entrega nada nuevo al usuario y solo suma un deploy innecesario.
+
+### 6. La letra chica del plan gratuito
+
+Los servicios gratuitos de Render se duermen cuando pasan un rato sin recibir pedidos, y el primer pedido después tarda hasta cerca de un minuto en despertarlos. Además tienen poca capacidad (0,1 CPU y 512 MB) y no tienen disco persistente, por eso los datos están en TiDB y no en Render. Como Render solo descarga la imagen ya construida, no gasto minutos de build ahí.
+
+El pipeline lo maneja con un smoke test que reintenta hasta 20 veces, cada 15 segundos (unos 5 minutos), sobre `/health` del backend y sobre `/api/habitos` a través del frontend. Con un solo intento fallaría cada vez que un servicio estuviera dormido.
+
+### 7. La garantía que se perdería si Render reconstruyera desde el repo
+
+Lo normal en Render es conectarle el repositorio y dejar que construya su propia imagen. Ahí se pierde la garantía: lo que corre en producción sería un artefacto nuevo, armado de nuevo por otra plataforma, y no la imagen que mis tests ya validaron. Podría diferir por una dependencia que cambió o por otro entorno de build. Por eso hice que Render descargue la imagen publicada en ghcr.io con el SHA del commit: lo que se probó es lo que se despliega.
+
+### 8. Qué prueba el smoke test y qué no
+
+Prueba que el backend responde en `/health` y que el frontend llega al backend y a la base. No prueba qué versión está corriendo: si el despliegue nuevo tarda, el test puede pasar contra la versión anterior que sigue arriba. Para saber la versión miré la pestaña Deploys de Render, que mostró el commit `d57f5c7` en los cuatro servicios.
+
+### 9. Patrón de despliegue para una producción real y plan de rollback
+
+Para una producción real usaría blue-green: dos entornos iguales, se despliega la versión nueva en el que no recibe tráfico, se prueba, y recién ahí se le cambia el tráfico; volver atrás es cambiarlo de vuelta. Descartaría canary (mandar de a poco un porcentaje de usuarios a la versión nueva) porque necesita mucho tráfico y métricas para que el porcentaje diga algo, y esta app es chica.
+
+El plan de rollback es ir a la pestaña Deploys del servicio en Render y apretar Rollback sobre el despliegue anterior. Lo medí en `habitos-backend-prod`: volver a `117596f` tardó 10,5 segundos y volver adelante a `d57f5c7`, 11,6 segundos. Después del primer rollback comprobé que PROD seguía funcionando y que "solo-prod" seguía ahí. El tiempo real sería ese más lo que tardo en detectar el problema, decidir y llegar al botón, que no medí y estimo en pocos minutos. Solo funciona mientras la imagen anterior siga en ghcr.io, y no deshace cambios en la base de datos.
+
+### 10. Problemas encontrados y cómo los resolví
+
+- TiDB exige conexión cifrada y el backend se conectaba sin cifrar. Agregué la opción `ssl` en `pool.js`, activada solo con `DB_SSL=true`, y probé la conexión local contra TiDB antes de desplegar.
+- No podía comprobar la plantilla de nginx con `docker run ... cat`: mostraba el archivo por defecto, porque el script de arranque de la imagen solo procesa las plantillas cuando el comando es `nginx`. Lo resolví levantando el contenedor con `-d` y mirando el archivo generado con `docker exec`.
+- La documentación de Render muestra `%40` para separar el tag en el parámetro `imgURL`, pero el comentario del mismo ejemplo usa dos puntos. Probé el hook a mano con `%3A`, respondió 200 y desplegó, así que usé ese formato en el pipeline.
+
+### 11. Declaración de uso de IA
+
+Usé Claude como guía paso a paso: elegir dónde desplegar, preparar el `ci.yml` con los jobs de publicación y de despliegue, convertir `nginx.conf` en una plantilla con variables y entender conceptos nuevos (environments, secretos por entorno, Delivery vs Deployment). Ejecuté todos los pasos en mi repositorio y en mis cuentas de GitHub, Render y TiDB.
+
+Verifiqué el resultado en cada etapa: que "Entrar al registry" saliera salteado en el PR, que las imágenes se bajaran sin login, que el rollback funcionara con tiempos medidos y que los cuatro servicios tuvieran Auto-Deploy deshabilitado. El motivo del rechazo salió de lo que revisé en QA, redacté y verifiqué con ayuda de Claude.
+
