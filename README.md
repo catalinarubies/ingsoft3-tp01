@@ -64,3 +64,12 @@ npm run dev
 ```
 
 Abrir **http://localhost:5173**.
+
+## Entornos desplegados
+
+| Entorno | Frontend | Backend (health) |
+|---|---|---|
+| QA | https://habitos-frontend-qa.onrender.com | https://habitos-backend-qa.onrender.com/health |
+| PROD | https://habitos-frontend-prod.onrender.com | https://habitos-backend-prod.onrender.com/health |
+
+Los servicios están en el plan gratuito de Render: si pasan un rato sin recibir pedidos se duermen, y el primer acceso puede tardar hasta un minuto en responder.
