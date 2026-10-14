@@ -189,7 +189,7 @@ jobs:
         run: |
           check() {
             for i in $(seq 1 20); do
-              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true)
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || echo 000)
               echo "intento $i: $1 -> HTTP $code"
               if [ "$code" = "200" ]; then return 0; fi
               sleep 15
@@ -201,11 +201,120 @@ jobs:
           check "$FRONTEND_URL/api/habitos"
           echo "QA OK con el commit ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
+  # ---------------------------------------------------------------------
+  # PRUEBAS CONTRA QA YA DESPLEGADO: integración (API + base de verdad) y
+  # e2e (navegador real). Su resultado decide si la MISMA imagen puede ir a PROD.
+  # ---------------------------------------------------------------------
+
+  # La API de QA, sin navegador y con la base de verdad. Va antes que la e2e:
+  # si se rompe la API, esta queda roja y la e2e ni arranca; si se rompe solo
+  # el front, esta queda verde y la e2e roja. Ese par dice quién se rompió.
+  integracion:
+    needs: deploy-qa
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # QA es una sola y la comparten todas las corridas: no se pisan.
+    concurrency:
+      group: qa-tests
+      cancel-in-progress: false
+    env:
+      API_BASE_URL: https://habitos-backend-qa.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Integración contra la API de QA
+        working-directory: ./frontend
+        run: npx playwright test -c playwright.integracion.config.js
+
+      - name: Resumen de la integración
+        if: always()
+        working-directory: ./frontend
+        run: |
+          node -e '
+            let s;
+            try { s = require("./resultados-integracion.json").stats; }
+            catch (e) { console.log("## Integración contra QA: no se generó el resultado"); process.exit(1); }
+            console.log("## Integración contra QA");
+            console.log("");
+            console.log(s.expected + " passed, " + s.unexpected + " failed, " + s.skipped + " skipped, " + s.flaky + " flaky");
+            if (s.expected < 3 || s.unexpected > 0 || s.skipped > 0 || s.flaky > 0) process.exit(1);
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir reporte de integración
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-integracion
+          path: frontend/playwright-report-integracion/
+
+  # El navegador real usa la app de QA completa (front -> nginx -> back -> base).
+  e2e:
+    needs: integracion
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: qa-tests
+      cancel-in-progress: false
+    env:
+      E2E_BASE_URL: https://habitos-frontend-qa.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Instalar el navegador
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: e2e contra QA
+        working-directory: ./frontend
+        run: npx playwright test -c playwright.e2e.config.js
+
+      - name: Resumen de la e2e
+        if: always()
+        working-directory: ./frontend
+        run: |
+          node -e '
+            let s;
+            try { s = require("./resultados-e2e.json").stats; }
+            catch (e) { console.log("## e2e contra QA: no se generó el resultado"); process.exit(1); }
+            console.log("## e2e contra QA");
+            console.log("");
+            console.log(s.expected + " passed, " + s.unexpected + " failed, " + s.skipped + " skipped, " + s.flaky + " flaky");
+            if (s.expected < 3 || s.unexpected > 0 || s.skipped > 0 || s.flaky > 0) process.exit(1);
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      # Se sube siempre, también cuando falla: trae captura y traza del fallo.
+      - name: Subir reporte e2e
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-e2e
+          path: frontend/playwright-report-e2e/
+
   # El entorno "production" tiene un revisor requerido: el job queda en
   # "Waiting for review" hasta que alguien lo aprueba (o lo rechaza).
-  # Solo se llega acá si deploy-qa, smoke test incluido, salió verde.
+  # Solo se llega acá si QA, la integración y la e2e salieron verdes (needs: e2e).
   deploy-prod:
-    needs: deploy-qa
+    needs: e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
@@ -236,7 +345,7 @@ jobs:
         run: |
           check() {
             for i in $(seq 1 20); do
-              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true)
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || echo 000)
               echo "intento $i: $1 -> HTTP $code"
               if [ "$code" = "200" ]; then return 0; fi
               sleep 15
