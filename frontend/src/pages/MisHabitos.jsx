@@ -115,7 +115,7 @@ export default function MisHabitos() {
           {error && <div className="error-msg">{error}</div>}
 
           <button type="submit" className="btn-primary" disabled={formInvalido}>
-            Guardar hábito
+            Agregar hábito
           </button>
         </form>
       </div>
