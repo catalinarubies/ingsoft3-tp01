@@ -1,5 +1,98 @@
 # Decisiones
 
+## TP7 - Contenedores en el pipeline, pruebas contra QA y compuerta antes de producción
+
+### Enlaces del TP7
+
+- Imágenes públicas en ghcr.io con el tag `sha-67a4d47b9591c8a186fdcc2016d631c388bf4ac0`, el commit que está en PROD: [habitos-backend](https://github.com/users/catalinarubies/packages/container/package/habitos-backend) y [habitos-frontend](https://github.com/users/catalinarubies/packages/container/package/habitos-frontend)
+- Corrida roja: el commit que rompe es `a466489` (cambié el texto del botón "Agregar hábito" por "Guardar hábito"), en el [run 38625886409](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38625886409). Integración en verde, e2e en rojo, `deploy-prod` sin arrancar. Reportes de esa corrida: `playwright-report-integracion` (verde) y `playwright-report-e2e` (rojo)
+- Corrida verde hasta PROD, con el commit del arreglo `67a4d47`: [run 39078109947](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/39078109947)
+- Corrida anterior (commit `695e411`) que rechacé: [run 38603700858](https://github.com/catalinarubies/ingsoft3-tp01/actions/runs/38603700858)
+- QA (vivo hasta la defensa): [frontend](https://habitos-frontend-qa.onrender.com) y [backend](https://habitos-backend-qa.onrender.com/health)
+- PROD (vivo hasta la defensa): [frontend](https://habitos-frontend-prod.onrender.com) y [backend](https://habitos-backend-prod.onrender.com/health)
+- Release: [v7.0.0](https://github.com/catalinarubies/ingsoft3-tp01/releases/tag/v7.0.0), sobre el commit `67a4d47`
+
+### 1. Construir una vez y desplegar muchas veces
+
+Construyo cada imagen una sola vez, cuando el commit llega a `main`, y esa misma imagen se despliega en QA y después en PROD. Render no construye nada: el pipeline le pasa por el deploy hook la imagen exacta (`imgURL`) y Render la descarga de ghcr.io.
+
+Así evito que cada entorno tenga un artefacto distinto. Si Render construyera desde el repo, una dependencia que saca una versión nueva entre el build de QA y el de PROD haría que PROD corriera algo que nunca probé. En TP6 ya desplegaba por imagen; lo que agrego ahora es que esa imagen, ya desplegada en QA, pasa pruebas de integración y e2e antes de poder ir a PROD. Lo que apruebo es una imagen con evidencia.
+
+### 2. Estrategia de tags
+
+En el registry la imagen lleva `sha-<commit>`; en git, el release lleva `v7.0.0`. El tag `sha-` dice con exactitud qué código tiene la imagen y no cambia nunca; `v7.0.0` es el nombre de una versión para las personas y apunta a un commit. No uso `latest` porque se mueve: no sabría qué corre en cada entorno ni a qué volver en un rollback.
+
+Los cuatro servicios de Render son los de TP6, no creé nuevos. La cabecera de cada servicio muestra la imagen con la que se configuró al crearlo (`117596fdc91cdbb1b73cd67d29707ad52b21e314`), pero esa no es la que corre: corre la del último despliegue de la pestaña Deploys, la que mandó el pipeline (hoy `sha-67a4d47…`).
+
+### 3. Del release a la imagen en un paso
+
+`git rev-list -n1 v7.0.0` devuelve el commit del tag, y la imagen es la que lleva `sha-` más ese commit: `docker pull ghcr.io/catalinarubies/habitos-backend:sha-$(git rev-list -n1 v7.0.0)`, sin login porque los paquetes son públicos. Hice el release sobre el commit que está en PROD (lo vi en Deployments, `production`), que no siempre es el último de `main`.
+
+### 4. Cómo verifico desde afuera qué imagen corre
+
+En Render, la pestaña Deploys de cada servicio muestra el tag `sha-…` y el trigger "Deploy Hook", y Events muestra "Triggered via Deploy Hook" con la imagen. Comparo ese SHA con el commit del run de GitHub; en QA y PROD tiene que ser el mismo. También hago `docker pull` de ese tag.
+
+El smoke test no puede decirme esto. Solo prueba que el backend responde en `/health` y que el frontend llega al backend y a la base. No distingue versiones y pasa aunque la interfaz esté rota: en la corrida roja el smoke de QA dio verde con el botón cambiado.
+
+### 5. Qué pruebas elegí y por qué
+
+Las dos suites usan Playwright (una sin navegador, con `request`; otra con navegador). Todas usan nombres únicos con la hora y borran lo que crean, comprobando que ya no esté.
+
+Integración, contra la API de QA (`frontend/e2e/api.spec.js`):
+- Crear un hábito, verificar que aparece, borrarlo y verificar que ya no está: el ciclo completo con la base real.
+- Nombre vacío: da 400 con "El nombre es obligatorio" y no se crea nada.
+- Nombre repetido: da 400 con "Ya existe un hábito con ese nombre" y queda uno solo. Depende de la restricción UNIQUE de la base real, que un test con mock no puede ver.
+
+e2e, con navegador contra el frontend de QA (`frontend/e2e/habitos.spec.js`):
+- Crear un hábito contador con meta y unidad, ver "Meta: 2000 ml" en su tarjeta y eliminarlo (creación).
+- Crear un nombre repetido: aparece el mensaje de error y no se crea otro (error de validación).
+- Un hábito creado sigue ahí al recargar la página, y después se elimina (uso diario que toca la base: el dato quedó guardado de verdad).
+
+Si una prueba falla por un cambio intencional, la actualizo en el mismo PR que cambia la app, porque quien cambia el comportamiento mantiene la prueba. Si falla sin que haya tocado esa parte, es un bug de la app y se arregla la app.
+
+### 6. Qué no pongo en cada suite
+
+Los unitarios son la base: muchos, rápidos, sin red ni base (por ejemplo, las 7 pruebas de validación). Arriba va la integración, con pocos casos, y arriba de todo la e2e, con todavía menos, porque son lentas y dependen de todo el entorno. En la e2e no pongo combinaciones de validación ni cada mensaje de error: cada test espera hasta 45 s antes de rendirse y eso se cubre más barato en un unitario. En la integración no pongo nada de cómo se ve la interfaz, porque sin navegador no la veo.
+
+### 7. Integración y e2e: qué dice el par verde y rojo
+
+En la corrida roja la integración dio verde (3 passed) y la e2e rojo (0 passed, 3 failed). Si la API anda, la interfaz puede estar rota igual: la integración habla con la API y la e2e usa la página como una persona. El reporte (se abre desde el artefacto `playwright-report-e2e` de esa corrida) muestra el error `waiting for getByRole('button', { name: 'Agregar hábito' })`, y los pasos anteriores (abrir la página y llenar Nombre, Meta y Unidad) salieron bien; solo falló el clic. Entonces la app carga y el formulario existe, y lo que falta es ese botón con ese nombre.
+
+### 8. Por qué la integración es "ancha", contra la API de QA
+
+La corro contra la API ya desplegada en QA y no contra una local. Gano que pruebo lo que va a PROD de verdad: la imagen desplegada, las variables de entorno, la conexión cifrada a TiDB, el UNIQUE de la base y el cold start. Pierdo velocidad y determinismo: depende de que QA esté despierto, comparte datos (por eso nombres únicos y limpieza) y un fallo es más difícil de diagnosticar. Una alternativa más angosta sería levantar el backend con un MySQL como contenedor de servicio dentro del job: es rápida y repetible, pero no prueba el entorno desplegado ni TiDB.
+
+### 9. Cold start y pruebas flaky
+
+Los servicios gratuitos de Render se duermen y el primer pedido tarda hasta cerca de un minuto. Lo manejo con tiempos de espera generosos en Playwright (45 s por aserción, 90 s de navegación, 120 s por test) y con el smoke test, que reintenta 20 veces cada 15 segundos. Uso un solo worker y cero reintentos. Una prueba flaky es la que a veces pasa y a veces falla sin que cambie el código; no uso reintentos porque la taparían, y el resumen del job falla si hay alguna flaky, alguna salteada o menos de 3 pasadas.
+
+### 10. La misma imagen del frontend en QA y PROD
+
+La imagen no tiene escrito a qué backend se conecta: el código de React usa rutas relativas (`/api/habitos`). Lo que cambia entre entornos (`BACKEND_URL`, `BACKEND_HOST` y `PORT`) se lee al arrancar el contenedor, con una plantilla de nginx a la que se le reemplazan las variables. Lo horneado es el código compilado y la estructura de la configuración. Las pruebas e2e reciben la URL desde el workflow (`E2E_BASE_URL`), no está escrita en los tests.
+
+### 11. La compuerta y la evidencia
+
+La cadena es `deploy-qa` → `integracion` → `e2e` → `deploy-prod`, cada uno con `needs` del anterior, y todo corre solo con un push a `main`. En `deploy-prod` no hay nada que desarme la compuerta (ni `continue-on-error`, ni `|| true`, ni `exit 0`, ni `if: always()`), y el entorno `production` conserva el revisor requerido.
+
+La corrida roja la muestra funcionando: el commit `a466489` pasó los 11 tests unitarios y la integración, falló la e2e y `deploy-prod` no arrancó. Un límite del diseño es que el código roto sí llegó a QA, porque QA se despliega antes de las pruebas: la compuerta protege a PROD, no a QA.
+
+Después arreglé el botón (`67a4d47`), la cadena salió toda en verde, aprobé `deploy-prod` con un comentario con el commit, los resultados y la imagen, y comprobé en Render que `habitos-backend-prod` y `habitos-frontend-prod` corrían el mismo `sha-67a4d47…` que QA.
+
+También rechacé la corrida anterior (`695e411`), que había quedado esperando y bloqueaba el pase a PROD del arreglo (el workflow permite un solo despliegue a PROD a la vez). El motivo: había quedado desactualizada y no quería desplegar a PROD una versión intermedia. Lo rechacé sin escribir el comentario en GitHub (se me pasó), así que ese motivo está solo acá.
+
+### 12. Problemas encontrados
+
+- El `deploy-prod` de la corrida nueva no podía arrancar porque la anterior seguía esperando aprobación; el cartel decía "waiting for deploy-prod (CI #44)". Lo resolví rechazando esa corrida.
+- Rechacé esa corrida sin comentario, y no se puede editar después; por eso dejé el motivo en este documento.
+
+### 13. Declaración de uso de IA
+
+Usé Claude para preparar el archivo de `ci.yml` con los jobs `integracion` y `e2e`, la configuración de Playwright y los tests de las dos suites, y para explicarme los conceptos (build once deploy many, tags, pirámide de pruebas, flaky). Claude probó las pruebas en su entorno contra una base simulada, porque no llegaba a mi QA; la primera vez que corrieron contra QA de verdad fue en mi pipeline.
+
+Ejecuté todos los pasos en mi repositorio y en mis cuentas de GitHub y Render: armé las ramas y los PR, hice el cambio que rompe el botón y el arreglo, aprobé y rechacé los despliegues, y verifiqué los resultados (los resúmenes, el reporte con el error, los tags en Render y en Packages, el `docker pull` y el release). 
+
+
+
 ## TP1 - Control de versiones
 
 ### 1. Por que Git no pudo resolver el conflicto solo
@@ -210,7 +303,7 @@ Las imágenes se etiquetan con el SHA del commit y no con `latest`, porque un SH
 
 ### 2. Entornos: qué es variable y qué está horneado en la imagen
 
-Usé Render para desplegar, con cuatro servicios (frontend y backend, en QA y en PROD), y TiDB Cloud como base de datos. Elegí TiDB porque es compatible con MySQL y mi app ya usa MySQL, así que no tuve que reescribir el backend ni los tests del TP5. Lo único que cambié en el código fue permitir conexión cifrada con la variable `DB_SSL=true` (PR #25), porque TiDB no acepta conexiones sin cifrar.
+Usé Render para desplegar, con cuatro servicios (frontend y backend, en QA y en PROD). Lo elegí porque permite crear un servicio a partir de una imagen ya publicada en un registry y desplegarla con un deploy hook, que es lo que necesitaba para no reconstruir en cada entorno, y porque tiene plan gratuito. Como base de datos usé TiDB Cloud y no Neon: Neon es PostgreSQL y mi app ya usa MySQL, así que habría tenido que cambiar el driver, las consultas del backend y adaptar los tests del TP5. TiDB es compatible con MySQL, así que no tuve que reescribir nada. Lo único que cambié en el código fue permitir conexión cifrada con la variable DB_SSL=true (PR #25), porque TiDB no acepta conexiones sin cifrar.
 
 Cada entorno tiene su propia base dentro del mismo cluster: `app_qa` y `app_prod`. Para comprobar que son distintas de verdad, creé un hábito llamado "solo-prod" únicamente en PROD y no aparece en QA.
 
