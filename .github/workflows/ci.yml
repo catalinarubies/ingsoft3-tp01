@@ -71,7 +71,7 @@ jobs:
       # Es el ULTIMO paso del job: se llega acá solo si los tests pasaron.
       # En un PR construye (valida el Dockerfile) pero no publica.
       - name: Construir y publicar la imagen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -139,7 +139,7 @@ jobs:
       # Es el ULTIMO paso del job: se llega acá solo si los tests pasaron.
       # En un PR construye (valida el Dockerfile) pero no publica.
       - name: Construir y publicar la imagen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
