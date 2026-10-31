@@ -366,3 +366,24 @@ Usé Claude como guía paso a paso: elegir dónde desplegar, preparar el `ci.yml
 
 Verifiqué el resultado en cada etapa: que "Entrar al registry" saliera salteado en el PR, que las imágenes se bajaran sin login, que el rollback funcionara con tiempos medidos y que los cuatro servicios tuvieran Auto-Deploy deshabilitado. El motivo del rechazo salió de lo que revisé en QA, redacté y verifiqué con ayuda de Claude.
 
+## TP8 - Infraestructura como código: entorno preprod con Terraform
+
+### 1. Herramienta y versiones
+
+Usé Terraform con el proveedor de TiDB Cloud (`tidbcloud/tidbcloud` 0.4.11) y el de Render (`render-oss/render` 1.9.1), más `random` 3.7.2 para generar la contraseña de la base. Las versiones están fijadas en `versions.tf` y el `.terraform.lock.hcl` está en el repositorio.
+
+La guía arma preprod con Neon. Yo usé TiDB porque preprod tiene que correr mi imagen del TP7, que usa MySQL, y Neon es PostgreSQL: habría tenido que cambiar el backend. Además es el mismo stack que QA y PROD. 
+
+Preprod es un entorno nuevo: no toqué ni importé QA ni PROD. No hay credenciales en los archivos (los proveedores leen las claves de variables de entorno), y el host de la base, el usuario y la dirección del backend salen de los otros recursos, no están copiados a mano. El estado tiene la contraseña de la base, por eso `.gitignore` lo excluye junto con `.terraform/` y los `tfvars`, y lo agregué antes del primer `apply`. Comprobé que `destroy` y un nuevo `apply` devuelven el mismo preprod, funcionando.
+
+### 2. Problemas y cómo los resolví
+
+- Me daba error 401 contra TiDB porque había mezclado las claves de Render con las de TiDB al cargarlas en las variables de entorno, y en Render había puesto el enlace entero en vez del ID del workspace. Lo encontré probando las claves con `curl` antes de usar Terraform.
+- El `plan` mostraba un cambio fantasma en el cluster de TiDB recién aplicado. Eran campos que calcula TiDB solo (estado, versión, etiquetas). Fijé el límite de gasto en cero y puse `ignore_changes` sobre esos campos. Terraform avisa que algunos son "redundantes", pero sin el bloque el cambio vuelve, así que lo dejé.
+- Render no deja modificar servicios gratuitos: para cambiar uno hay que destruirlo y volver a crearlo. Por eso el tag de la imagen es una variable.
+
+### 3. Declaración de uso de IA
+
+Claude eligió la herramienta para este tp y me ayudo a utilizarla. Yo ejecuté todos los comandos en mi compu y mis cuentas, creé las claves de API, probé el entorno. 
+
+
