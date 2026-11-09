@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./instrument');
 const app = require('./src/app');
 const inicializarEsquema = require('./src/db/init');
 
