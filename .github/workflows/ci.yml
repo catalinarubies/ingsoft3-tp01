@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -80,7 +80,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -155,7 +155,7 @@ jobs:
   deploy-qa:
     needs: [build-backend, build-frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: qa
     concurrency:
       group: deploy-qa
@@ -212,7 +212,7 @@ jobs:
   integracion:
     needs: deploy-qa
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # QA es una sola y la comparten todas las corridas: no se pisan.
     concurrency:
       group: qa-tests
@@ -261,7 +261,7 @@ jobs:
   e2e:
     needs: integracion
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     concurrency:
       group: qa-tests
       cancel-in-progress: false
@@ -316,7 +316,7 @@ jobs:
   deploy-prod:
     needs: e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     concurrency:
       group: deploy-prod
