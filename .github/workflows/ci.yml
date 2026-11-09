@@ -51,7 +51,7 @@ jobs:
 
       - name: Subir reporte de cobertura como artefacto
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-backend
           path: backend/coverage/
@@ -119,7 +119,7 @@ jobs:
 
       - name: Subir reporte de cobertura como artefacto
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-frontend
           path: frontend/coverage/
@@ -252,7 +252,7 @@ jobs:
 
       - name: Subir reporte de integración
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-integracion
           path: frontend/playwright-report-integracion/
@@ -305,7 +305,7 @@ jobs:
       # Se sube siempre, también cuando falla: trae captura y traza del fallo.
       - name: Subir reporte e2e
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-e2e
           path: frontend/playwright-report-e2e/
