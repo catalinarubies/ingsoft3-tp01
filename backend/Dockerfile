@@ -21,7 +21,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
-COPY server.js ./
+COPY server.js instrument.js ./
 COPY src ./src
 
 EXPOSE 3001
