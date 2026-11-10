@@ -387,3 +387,16 @@ Preprod es un entorno nuevo: no toqué ni importé QA ni PROD. No hay credencial
 Claude eligió la herramienta para este tp y me ayudo a utilizarla. Yo ejecuté todos los comandos en mi compu y mis cuentas, creé las claves de API, probé el entorno. 
 
 
+## TP9 – DevSecOps, observabilidad y feedback continuo
+
+**PR de Dependabot.** Mergeé el #50, que actualiza `mysql2` de 3.23.4 a 3.24.6. Es una subida menor, sin cambio de versión mayor, así que no debería romper la API. Me animé a mergearlo porque el pipeline lo probó antes de llegar a producción: build, integración contra la base real en QA con TLS y e2e salieron verdes, y el deploy a producción pide mi aprobación manual. Las subidas mayores (vite, vitest, react-dom) salieron rojas y las dejé abiertas.
+
+**Monitor y Sentry.** Suspendí el backend de producción a las 18:42 y el monitor me avisó de la caída por mail a las 18:46, unos 4,5 minutos después. El primer chequeo con error fue a las 18:45 y el monitor esperó a que otras tres ubicaciones lo confirmaran antes de avisar, para evitar falsas alarmas. Al reactivarlo a las 18:48, el aviso de UP llegó a las 18:51, unos 3,5 minutos después. Según Sentry, la operación más usada es `GET /api/habitos` (4 requests) y también la más lenta, con p75 de unos 340 ms; el resto está entre 15 y 36 ms. Son pocos datos, lo tomo como una pista. De ahí salió una tarjeta en el tablero del TP3.
+
+**Problemas.**
+- `ubuntu-latest` pasó a Ubuntu 26.04 y Playwright no instalaba el navegador: fijé el runner en `ubuntu-24.04`.
+- La imagen del backend con Sentry falló en producción porque el Dockerfile no copiaba `instrument.js`. Render mantuvo la versión anterior, así que no hubo caída. Lo arreglé en el `COPY`. 
+- `dependabot.yml` estaba en la carpeta equivocada y lo moví a `.github/`.
+- En Sentry faltaba el proyecto del backend y el `SENTRY_DSN` apuntaba mal: creé el proyecto y corregí la variable.
+
+**Uso de IA.** Claude me ayudó a elegir las herramientas, y escribió el código de Sentry. Yo ejecuté todo: cuentas, commits, PR, aprobaciones, la caída del servicio y las variables de entorno.
